@@ -11,6 +11,9 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  OUT: red_notices.csv
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
