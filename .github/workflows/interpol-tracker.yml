@@ -1,0 +1,71 @@
+# .github/workflows/interpol-tracker.yml
+name: interpol-tracker
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: interpol-tracker
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'          # format() uses PEP 701 nested quotes
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Scrape
+        env:
+          MSG: ${{ runner.temp }}/msg.txt    # kept out of the repo on purpose
+        run: python update.py
+
+      - name: Commit if changed
+        run: |
+          set -euo pipefail
+
+          MSG="$RUNNER_TEMP/msg.txt"
+
+          if [ -z "$(git status --porcelain -- "$OUT")" ]; then
+            echo "No change."
+            exit 0
+          fi
+
+          if [ -s "$MSG" ]; then
+            n=$(wc -l < "$MSG" | tr -d ' ')
+
+            subject="$(head -n 1 "$MSG")"
+            [ "$n" -gt 1 ] && subject="$subject, +$((n - 1)) more"
+
+            {
+              echo "$subject"
+              echo
+              head -n 50 "$MSG"
+              [ "$n" -gt 50 ] && echo "- ...and $((n - 50)) more"
+            } > "$RUNNER_TEMP/commit-msg.txt"
+          else
+            echo "initial snapshot" > "$RUNNER_TEMP/commit-msg.txt"
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$OUT"
+          git commit -F "$RUNNER_TEMP/commit-msg.txt"
+
+          for i in 1 2 3; do
+            git push && exit 0
+            git pull --rebase --autostash
+          done
+          exit 1
